@@ -47,7 +47,7 @@ Prepare config.json to define your data sources, queries, parameters, and operat
           "Name": "PrevIds",
           "FromQuery": "Query1",
           "Column": "Id",
-          "Format": "IN_CLAUSE"
+          "Format": "InClause"
         }
       ]
     }
