@@ -1,81 +1,102 @@
 ﻿using SQLBlend.Config;
 using SQLBlend.Config.Models.Config;
 using SQLBlend.Database;
+using SQLBlend.Terminal;
 
 namespace SQLBlend;
 
 internal class Program
 {
+    private const string DefaultConfigsBaseDir = "";
+    private const string ConfigFileName = "config.json";
+
     static async Task Main(string[] args)
     {
-        var (config, resultsDir) = LoadConfiguration(args);
-
-        var resultsByQueryName = new Dictionary<string, List<Dictionary<string, object>>>();
-        var clients = new Dictionary<string, IDatabaseClient>();
-
-        foreach (var connInfo in config.ConnectionStrings)
+        try
         {
-            var client = new DatabaseClient(connInfo.ConnectionString, connInfo.Type);
-            clients[connInfo.Name] = client;
-        }
+            string? configFolder = ConfigSelector.SelectConfigFolder(DefaultConfigsBaseDir);
 
-        foreach (var queryConfig in config.Queries)
-        {
-            var resultFileName = Path.Combine(resultsDir, $"{queryConfig.Name}.csv");
-
-            if (File.Exists(resultFileName))
+            if (configFolder == null)
             {
-                resultsByQueryName[queryConfig.Name] = CsvFileManager.ReadFromCsv(resultFileName);
-                continue;
+                Console.WriteLine("Configuration selection cancelled.");
+                return;
             }
 
-            var sql = File.ReadAllText(queryConfig.QueryFilePath);
+            args = [Path.Combine(configFolder, ConfigFileName)];
 
-            // Substitute parameters if they exist
-            if (queryConfig.Parameters != null)
+            var (config, resultsDir) = LoadConfiguration(args);
+
+            var resultsByQueryName = new Dictionary<string, List<Dictionary<string, object>>>();
+            var clients = new Dictionary<string, IDatabaseClient>();
+
+            foreach (var connInfo in config.ConnectionStrings)
             {
-                foreach (var param in queryConfig.Parameters)
+                var client = new DatabaseClient(connInfo.ConnectionString, connInfo.Type);
+                clients[connInfo.Name] = client;
+            }
+
+            foreach (var queryConfig in config.Queries)
+            {
+                var resultFileName = Path.Combine(resultsDir, $"{queryConfig.Name}.csv");
+
+                if (File.Exists(resultFileName))
                 {
-                    var prevResults = resultsByQueryName[param.FromQuery];
-                    var values = new List<object>();
-                    foreach (var row in prevResults)
-                    {
-                        if (row.ContainsKey(param.Column))
-                            values.Add(row[param.Column]);
-                    }
-
-                    // Генерируем строку для подстановки
-                    if (param.Format == QueryParameterFormatType.InClause)
-                    {
-                        string inClause = "(" + string.Join(",", values) + ")";
-                        sql = sql.Replace($"@{param.Name}", inClause);
-                    }
-
-                    // Extend logic for additional parameter formats if needed
+                    resultsByQueryName[queryConfig.Name] = CsvFileManager.ReadFromCsv(resultFileName);
+                    continue;
                 }
+
+                var sql = File.ReadAllText(queryConfig.QueryFilePath);
+
+                // Substitute parameters if they exist
+                if (queryConfig.Parameters != null)
+                {
+                    foreach (var param in queryConfig.Parameters)
+                    {
+                        var prevResults = resultsByQueryName[param.FromQuery];
+                        var values = new List<object>();
+                        foreach (var row in prevResults)
+                        {
+                            if (row.ContainsKey(param.Column))
+                                values.Add(row[param.Column]);
+                        }
+
+                        if (param.Format == QueryParameterFormatType.InClause)
+                        {
+                            string inClause = "(" + string.Join(",", values) + ")";
+                            sql = sql.Replace($"@{param.Name}", inClause);
+                        }
+
+                        // Extend logic for additional parameter formats if needed
+                    }
+                }
+
+                var client = clients[queryConfig.DataSourceName];
+                var queryResults = await client.ExecuteQueryAsync(sql);
+                resultsByQueryName[queryConfig.Name] = queryResults;
+
+                CsvFileManager.SaveToCsv(queryResults, resultFileName);
             }
 
-            var client = clients[queryConfig.DataSourceName];
-            var queryResults = await client.ExecuteQueryAsync(sql);
-            resultsByQueryName[queryConfig.Name] = queryResults;
-
-            CsvFileManager.SaveToCsv(queryResults, resultFileName);
-        }
-
-        foreach (var filter in config.FiltersAndAggregations)
-        {
-            var resultFileName = Path.Combine(resultsDir, $"{filter.Name}.csv");
-
-            if (File.Exists(resultFileName))
+            foreach (var filter in config.FiltersAndAggregations)
             {
-                resultsByQueryName[filter.Name] = CsvFileManager.ReadFromCsv(resultFileName);
-                continue;
-            }
+                var resultFileName = Path.Combine(resultsDir, $"{filter.Name}.csv");
 
-            var aggregator = new DataAggregator(resultsByQueryName);
-            var aggregationResult = aggregator.ApplyOperations(filter.Operations);
-            resultsByQueryName[filter.Name] = aggregationResult;
-            CsvFileManager.SaveToCsv(aggregationResult, resultFileName);
+                if (File.Exists(resultFileName))
+                {
+                    resultsByQueryName[filter.Name] = CsvFileManager.ReadFromCsv(resultFileName);
+                    continue;
+                }
+
+                var aggregator = new DataAggregator(resultsByQueryName);
+                var aggregationResult = aggregator.ApplyOperations(filter.Operations);
+                resultsByQueryName[filter.Name] = aggregationResult;
+                CsvFileManager.SaveToCsv(aggregationResult, resultFileName);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error: {ex.Message}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
         }
     }
 
