@@ -1,9 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.12.35527.113 d17.12
+# Visual Studio Version 18
+VisualStudioVersion = 18.1.11312.151 d18.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SQLBlend", "SQLBlend.csproj", "{53697914-AE8D-4367-B593-559B70162AA2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SQLBlend", "App\SQLBlend.csproj", "{53697914-AE8D-4367-B593-559B70162AA2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SQLBlend.Tests", "SQLBlend.Tests\SQLBlend.Tests.csproj", "{3C474BA7-EF78-4EC6-A4C6-3131B4CB3354}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,8 +17,15 @@ Global
 		{53697914-AE8D-4367-B593-559B70162AA2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{53697914-AE8D-4367-B593-559B70162AA2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{53697914-AE8D-4367-B593-559B70162AA2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3C474BA7-EF78-4EC6-A4C6-3131B4CB3354}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3C474BA7-EF78-4EC6-A4C6-3131B4CB3354}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3C474BA7-EF78-4EC6-A4C6-3131B4CB3354}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3C474BA7-EF78-4EC6-A4C6-3131B4CB3354}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {32D79959-7978-49F8-8299-7129953D04B3}
 	EndGlobalSection
 EndGlobal
