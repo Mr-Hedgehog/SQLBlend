@@ -20,6 +20,7 @@
 Prepare config.json to define your data sources, queries, parameters, and operations. For example:
 ```json
 {
+  "Description": "Optional description of the configuration, displayed in the configuration selector",
   "ConnectionStrings": [
     {
       "Name": "Source1",
@@ -72,9 +73,10 @@ Prepare config.json to define your data sources, queries, parameters, and operat
 ```
 In the above:
 
-Two data sources (`Source1` and `Source2`) are defined.
-`Query1` runs against SQL Server, `Query2` runs against PostgreSQL and uses the results of `Query1` to build its IN clause.
-The final result (`FinalResult`) unions `Query1` and `Query2` results, then filters them.
+* Optional `Description` field provides a human-readable description of the configuration. It is displayed in the configuration folder selector (limited to 60 characters in the list view) and is also searchable when selecting a configuration.
+* Two data sources (`Source1` and `Source2`) are defined.
+* `Query1` runs against SQL Server, `Query2` runs against PostgreSQL and uses the results of `Query1` to build its IN clause.
+* The final result (`FinalResult`) unions `Query1` and `Query2` results, then filters them.
 
 ### 2. Add SQL Files:
 Store your queries in separate .sql files, for example:

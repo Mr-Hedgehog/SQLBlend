@@ -7,14 +7,15 @@ namespace SQLBlend;
 
 internal class Program
 {
-    private const string DefaultConfigsBaseDir = "";
+    private static readonly string DefaultConfigsBaseDir = Directory.GetCurrentDirectory();
     private const string ConfigFileName = "config.json";
 
     static async Task Main(string[] args)
     {
         try
         {
-            string? configFolder = ConfigSelector.SelectConfigFolder(DefaultConfigsBaseDir);
+            string configsBaseDir = args.Length > 0 ? args[0] : DefaultConfigsBaseDir;
+            string? configFolder = ConfigSelector.SelectConfigFolder(configsBaseDir);
 
             if (configFolder == null)
             {

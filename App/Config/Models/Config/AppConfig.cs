@@ -16,4 +16,9 @@ public class AppConfig
     /// Filter and aggregation configuration
     /// </summary>
     public List<FilterAggregationConfig> FiltersAndAggregations { get; set; }
+
+    /// <summary>
+    /// Optional description of the configuration
+    /// </summary>
+    public string? Description { get; set; }
 }

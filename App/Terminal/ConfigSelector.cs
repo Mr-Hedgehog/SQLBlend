@@ -1,9 +1,12 @@
 using Terminal.Gui;
+using SQLBlend.Config;
 
 namespace SQLBlend.Terminal;
 
 public static class ConfigSelector
 {
+    private const string ConfigFileName = "config.json";
+
     /// <summary>
     /// Displays a terminal UI with a list of configuration folders for selection.
     /// Returns the full path to the chosen folder or null if selection was cancelled.
@@ -17,9 +20,10 @@ public static class ConfigSelector
             return null;
         }
 
-        // Enumerate sub-directories
+        // Enumerate sub-directories that contain config.json
         var subDirs = Directory.GetDirectories(baseDir)
-            .Select(d => new { Path = d, Name = System.IO.Path.GetFileName(d) })
+            .Where(d => File.Exists(Path.Combine(d, ConfigFileName)))
+            .Select(d => new { Path = d, Name = Path.GetFileName(d) })
             .OrderBy(d => d.Name)
             .ToArray();
 
@@ -61,9 +65,24 @@ public static class ConfigSelector
             Y = Pos.Center()
         };
 
-        var folderNames = folders.Select(f => (string)f.Name).ToList();
-        var folderPaths = folders.Select(f => (string)f.Path).ToList();
-        var filteredIndices = Enumerable.Range(0, folderNames.Count).ToList();
+        // Load folder information with descriptions
+        var folderInfo = new List<(string Name, string Path, string? Description)>();
+        foreach (var folder in folders)
+        {
+            var folderPath = (string)folder.Path;
+            var folderName = (string)folder.Name;
+            var description = TryLoadConfigDescription(folderPath);
+            folderInfo.Add((folderName, folderPath, description));
+        }
+
+        var displayNames = folderInfo.Select(f => 
+            string.IsNullOrWhiteSpace(f.Description) 
+                ? f.Name 
+                : $"{f.Description} - {f.Name}"
+        ).ToList();
+        
+        var folderPaths = folderInfo.Select(f => f.Path).ToList();
+        var filteredIndices = Enumerable.Range(0, displayNames.Count).ToList();
 
         // Search label
         var searchLabel = new Label("Search:")
@@ -82,7 +101,7 @@ public static class ConfigSelector
         };
 
         // ListView with filtered results
-        var listView = new ListView(folderNames.Where((_, i) => filteredIndices.Contains(i)).ToList())
+        var listView = new ListView(displayNames.Where((_, i) => filteredIndices.Contains(i)).ToList())
         {
             X = 0,
             Y = 2,
@@ -103,15 +122,17 @@ public static class ConfigSelector
             {
                 // Show all items
                 filteredIndices.Clear();
-                filteredIndices.AddRange(Enumerable.Range(0, folderNames.Count));
+                filteredIndices.AddRange(Enumerable.Range(0, folderInfo.Count));
             }
             else
             {
-                // Filter items by search text
+                // Filter items by search text (search in folder name and description)
                 filteredIndices.Clear();
-                for (int i = 0; i < folderNames.Count; i++)
+                for (int i = 0; i < folderInfo.Count; i++)
                 {
-                    if (folderNames[i].ToLower().Contains(searchText))
+                    var (name, _, description) = folderInfo[i];
+                    if (name.ToLower().Contains(searchText) || 
+                        (description != null && description.ToLower().Contains(searchText)))
                     {
                         filteredIndices.Add(i);
                     }
@@ -119,7 +140,7 @@ public static class ConfigSelector
             }
 
             // Update ListView with filtered items
-            var filteredNames = filteredIndices.Select(i => folderNames[i]).ToList();
+            var filteredNames = filteredIndices.Select(i => displayNames[i]).ToList();
             listView.SetSource(filteredNames);
             
             // Select first item if available
@@ -168,5 +189,29 @@ public static class ConfigSelector
         Application.Run();
 
         return selectedPath;
+    }
+
+    /// <summary>
+    /// Tries to load the configuration description from the config.json file in the given folder.
+    /// Returns null if the file doesn't exist or an error occurs.
+    /// </summary>
+    private static string? TryLoadConfigDescription(string folderPath)
+    {
+        try
+        {
+            var configPath = Path.Combine(folderPath, ConfigFileName);
+            if (!File.Exists(configPath))
+            {
+                return null;
+            }
+
+            var config = ConfigReader.Read(configPath);
+            return config?.Description;
+        }
+        catch
+        {
+            // If there's any error loading the config, just return null
+            return null;
+        }
     }
 }
