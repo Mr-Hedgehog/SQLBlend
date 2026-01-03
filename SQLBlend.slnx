@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="App/SQLBlend.csproj" />
+  <Project Path="SQLBlend.Tests/SQLBlend.Tests.csproj" />
+</Solution>
