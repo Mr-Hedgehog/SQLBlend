@@ -12,6 +12,8 @@ internal class Program
 
     static async Task Main(string[] args)
     {
+        ProgressTracker? tracker = null;
+
         try
         {
             string configsBaseDir = args.Length > 0 ? args[0] : DefaultConfigsBaseDir;
@@ -25,80 +27,185 @@ internal class Program
 
             args = [Path.Combine(configFolder, ConfigFileName)];
 
+            tracker = new ProgressTracker();
+            tracker.Initialize();
+
+            tracker.AddStep("Select Configuration");
+            tracker.CompleteStep("Select Configuration");
+            tracker.UpdateProgress(5, "Loading configuration...");
+
+            tracker.AddStep("Load Configuration");
+            tracker.StartStep("Load Configuration");
             var (config, resultsDir) = LoadConfiguration(args);
+            tracker.CompleteStep("Load Configuration");
+            tracker.UpdateProgress(15, "Initializing database clients...");
 
             var resultsByQueryName = new Dictionary<string, List<Dictionary<string, object>>>();
             var clients = new Dictionary<string, IDatabaseClient>();
 
+            tracker.AddStep("Initialize Database Clients");
+            tracker.StartStep("Initialize Database Clients", $"{config.ConnectionStrings.Count} connections");
             foreach (var connInfo in config.ConnectionStrings)
             {
                 var client = new DatabaseClient(connInfo.ConnectionString, connInfo.Type);
                 clients[connInfo.Name] = client;
             }
+            tracker.CompleteStep("Initialize Database Clients");
+
+            int totalQueries = config.Queries.Count;
+            int queryIndex = 0;
+            int progressPerQuery = (100 - 30) / (totalQueries + config.FiltersAndAggregations.Count);
+
+            tracker.UpdateProgress(20, "Executing queries...");
 
             foreach (var queryConfig in config.Queries)
             {
-                var resultFileName = Path.Combine(resultsDir, $"{queryConfig.Name}.csv");
+                queryIndex++;
+                var stepName = $"Query: {queryConfig.Name}";
+                tracker.AddStep(stepName);
+                tracker.StartStep(stepName);
 
-                if (File.Exists(resultFileName))
+                try
                 {
-                    resultsByQueryName[queryConfig.Name] = CsvFileManager.ReadFromCsv(resultFileName);
-                    continue;
-                }
+                    var resultFileName = Path.Combine(resultsDir, $"{queryConfig.Name}.csv");
 
-                var sql = File.ReadAllText(queryConfig.QueryFilePath);
-
-                // Substitute parameters if they exist
-                if (queryConfig.Parameters != null)
-                {
-                    foreach (var param in queryConfig.Parameters)
+                    if (File.Exists(resultFileName))
                     {
-                        var prevResults = resultsByQueryName[param.FromQuery];
-                        var values = new List<object>();
-                        foreach (var row in prevResults)
-                        {
-                            if (row.ContainsKey(param.Column))
-                                values.Add(row[param.Column]);
-                        }
-
-                        if (param.Format == QueryParameterFormatType.InClause)
-                        {
-                            string inClause = "(" + string.Join(",", values) + ")";
-                            sql = sql.Replace($"@{param.Name}", inClause);
-                        }
-
-                        // Extend logic for additional parameter formats if needed
+                        resultsByQueryName[queryConfig.Name] = CsvFileManager.ReadFromCsv(resultFileName);
+                        tracker.CompleteStep(stepName, "Loaded from cache");
                     }
+                    else
+                    {
+                        var sql = File.ReadAllText(queryConfig.QueryFilePath);
+
+                        if (queryConfig.Parameters != null)
+                        {
+                            foreach (var param in queryConfig.Parameters)
+                            {
+                                var prevResults = resultsByQueryName[param.FromQuery];
+                                var values = new List<object>();
+                                foreach (var row in prevResults)
+                                {
+                                    if (row.ContainsKey(param.Column))
+                                        values.Add(row[param.Column]);
+                                }
+
+                                if (param.Format == QueryParameterFormatType.InClause)
+                                {
+                                    string inClause = "(" + string.Join(",", values) + ")";
+                                    sql = sql.Replace($"@{param.Name}", inClause);
+                                }
+                            }
+                        }
+
+                        var client = clients[queryConfig.DataSourceName];
+                        var queryResults = await client.ExecuteQueryAsync(sql);
+                        resultsByQueryName[queryConfig.Name] = queryResults;
+
+                        CsvFileManager.SaveToCsv(queryResults, resultFileName);
+                        tracker.CompleteStep(stepName, $"{queryResults.Count} rows");
+                    }
+
+                    int progress = 20 + (queryIndex * progressPerQuery);
+                    tracker.UpdateProgress(progress, $"Processing query {queryIndex}/{totalQueries}...");
                 }
-
-                var client = clients[queryConfig.DataSourceName];
-                var queryResults = await client.ExecuteQueryAsync(sql);
-                resultsByQueryName[queryConfig.Name] = queryResults;
-
-                CsvFileManager.SaveToCsv(queryResults, resultFileName);
+                catch (Exception ex)
+                {
+                    tracker.FailStep(stepName, ex.Message);
+                    throw;
+                }
             }
 
+            tracker.UpdateProgress(50, "Applying filters and aggregations...");
+
+            int filterIndex = 0;
             foreach (var filter in config.FiltersAndAggregations)
             {
-                var resultFileName = Path.Combine(resultsDir, $"{filter.Name}.csv");
+                filterIndex++;
+                var stepName = $"Filter: {filter.Name}";
+                tracker.AddStep(stepName);
+                tracker.StartStep(stepName);
 
-                if (File.Exists(resultFileName))
+                try
                 {
-                    resultsByQueryName[filter.Name] = CsvFileManager.ReadFromCsv(resultFileName);
-                    continue;
-                }
+                    var resultFileName = Path.Combine(resultsDir, $"{filter.Name}.csv");
 
-                var aggregator = new DataAggregator(resultsByQueryName);
-                var aggregationResult = aggregator.ApplyOperations(filter.Operations);
-                resultsByQueryName[filter.Name] = aggregationResult;
-                CsvFileManager.SaveToCsv(aggregationResult, resultFileName);
+                    if (File.Exists(resultFileName))
+                    {
+                        resultsByQueryName[filter.Name] = CsvFileManager.ReadFromCsv(resultFileName);
+                        tracker.CompleteStep(stepName, "Loaded from cache");
+                    }
+                    else
+                    {
+                        var aggregator = new DataAggregator(resultsByQueryName);
+                        var aggregationResult = aggregator.ApplyOperations(filter.Operations);
+                        resultsByQueryName[filter.Name] = aggregationResult;
+                        CsvFileManager.SaveToCsv(aggregationResult, resultFileName);
+                        tracker.CompleteStep(stepName, $"{aggregationResult.Count} rows");
+                    }
+
+                    int progress = 50 + (filterIndex * progressPerQuery);
+                    tracker.UpdateProgress(progress, $"Processing filter {filterIndex}/{config.FiltersAndAggregations.Count}...");
+                }
+                catch (Exception ex)
+                {
+                    tracker.FailStep(stepName, ex.Message);
+                    throw;
+                }
             }
+
+            tracker.UpdateProgress(100, "Complete!");
+
+            var completionMessage = FormatCompletionMessage(tracker, resultsDir, resultsByQueryName);
+            tracker.ShowCompletionMessage(completionMessage);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error: {ex.Message}");
-            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            if (tracker != null)
+            {
+                var errorMessage = $"Error: {ex.Message}\n\nStack trace:\n{ex.StackTrace}";
+                tracker.ShowCompletionMessage(errorMessage);
+            }
+            else
+            {
+                Console.WriteLine($"Error: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            }
         }
+        finally
+        {
+            // Даем время пользователю посмотреть результаты перед закрытием
+            System.Threading.Thread.Sleep(500);
+            tracker?.Dispose();
+        }
+    }
+
+    private static string FormatCompletionMessage(ProgressTracker tracker, string resultsDir, Dictionary<string, List<Dictionary<string, object>>> results)
+    {
+        var steps = tracker.GetSteps();
+        var completedSteps = steps.Count(s => s.Status == ProgressTracker.ProgressStepStatus.Completed);
+
+        var message = new System.Text.StringBuilder();
+        message.AppendLine("═══════════════════════════════════════════════════════════");
+        message.AppendLine("                  EXECUTION COMPLETED                      ");
+        message.AppendLine("═══════════════════════════════════════════════════════════\n");
+
+        message.AppendLine($"Results saved to: {resultsDir}\n");
+
+        message.AppendLine("EXECUTION STEPS:");
+        message.AppendLine("───────────────────────────────────────────────────────────");
+
+        foreach (var step in steps)
+        {
+            message.AppendLine(step.ToString());
+        }
+
+        message.AppendLine("\n───────────────────────────────────────────────────────────");
+        message.AppendLine($"Total steps completed: {completedSteps}/{steps.Count}");
+        message.AppendLine($"Total results generated: {results.Count}");
+        message.AppendLine("═══════════════════════════════════════════════════════════");
+
+        return message.ToString();
     }
 
     /// <summary>
