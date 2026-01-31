@@ -231,16 +231,24 @@ public class DataAggregator(Dictionary<string, List<Dictionary<string, object>>>
         var leftData = resultsByQueryName[operation.LeftQueryName];
         var rightData = resultsByQueryName[operation.RightQueryName];
 
+        // Validate that all join conditions use "=" operator (required for hash join)
+        foreach (var cond in operation.JoinConditions)
+        {
+            if (cond.Operator != "=")
+                throw new NotSupportedException($"Operator {cond.Operator} is not supported. Hash join only supports '=' operator.");
+        }
+
+        // Build hash index on right table - O(m)
+        var rightIndex = BuildHashIndex(rightData, operation.JoinConditions, isLeft: false);
+
         var result = new List<Dictionary<string, object>>();
 
+        // Probe with left table - O(n) with O(1) lookups
         foreach (var leftRow in leftData)
         {
-            // Find all matching rows in the right table
-            var matchingRightRows = rightData
-                .Where(rightRow => RowMatchesConditions(leftRow, rightRow, operation.JoinConditions))
-                .ToList();
-
-            if (matchingRightRows.Count > 0)
+            var key = BuildJoinKey(leftRow, operation.JoinConditions, isLeft: true);
+            
+            if (rightIndex.TryGetValue(key, out var matchingRightRows) && matchingRightRows.Count > 0)
             {
                 // For each match, form the resulting row
                 foreach (var rightRow in matchingRightRows)
@@ -248,46 +256,67 @@ public class DataAggregator(Dictionary<string, List<Dictionary<string, object>>>
                     result.Add(SelectColumnsFromRows(leftRow, rightRow, operation.SelectColumns));
                 }
             }
-            else
+            else if (!innerJoin)
             {
-                // If it is a LeftJoin and there are no matches, add a row with null for the right columns
-                if (!innerJoin)
-                {
-                    result.Add(SelectColumnsFromRows(leftRow, null, operation.SelectColumns));
-                }
+                // LeftJoin: add row with null for the right columns
+                result.Add(SelectColumnsFromRows(leftRow, null, operation.SelectColumns));
             }
         }
 
         return result;
     }
 
-    private static bool RowMatchesConditions(Dictionary<string, object> leftRow, Dictionary<string, object> rightRow, List<JoinCondition> conditions)
+    /// <summary>
+    /// Builds a hash index for efficient join lookups. Complexity: O(n)
+    /// </summary>
+    private static Dictionary<string, List<Dictionary<string, object>>> BuildHashIndex(
+        List<Dictionary<string, object>> data,
+        List<JoinCondition> conditions,
+        bool isLeft)
     {
-        foreach (var cond in conditions)
+        var index = new Dictionary<string, List<Dictionary<string, object>>>();
+
+        foreach (var row in data)
         {
-            // For now, we only support the "=" operator
-            if (cond.Operator != "=")
-                throw new NotSupportedException($"Operator {cond.Operator} is not supported yet.");
-
-            object leftVal = leftRow.ContainsKey(cond.LeftColumn) ? leftRow[cond.LeftColumn] : null;
-            object rightVal = rightRow.ContainsKey(cond.RightColumn) ? rightRow[cond.RightColumn] : null;
-
-            // Compare the values. For example, if they are null or types do not match, we consider them unequal
-            if (!AreValuesEqual(leftVal, rightVal))
+            var key = BuildJoinKey(row, conditions, isLeft);
+            
+            if (!index.TryGetValue(key, out var bucket))
             {
-                return false;
+                bucket = new List<Dictionary<string, object>>();
+                index[key] = bucket;
             }
+            bucket.Add(row);
         }
-        return true;
+
+        return index;
     }
 
-    private static bool AreValuesEqual(object leftVal, object rightVal)
+    /// <summary>
+    /// Builds a composite key from row values for join columns.
+    /// Uses a separator that's unlikely to appear in data.
+    /// </summary>
+    private static string BuildJoinKey(Dictionary<string, object> row, List<JoinCondition> conditions, bool isLeft)
     {
-        // Primitive comparison. You can expand the logic as needed
-        if (leftVal == null && rightVal == null) return true;
-        if (leftVal == null || rightVal == null) return false;
+        const string separator = "\x1F"; // Unit separator - unlikely in normal data
+        const string nullMarker = "\x00NULL\x00";
 
-        return leftVal.Equals(rightVal);
+        var keyParts = new string[conditions.Count];
+
+        for (int i = 0; i < conditions.Count; i++)
+        {
+            var columnName = isLeft ? conditions[i].LeftColumn : conditions[i].RightColumn;
+            
+            if (row.TryGetValue(columnName, out var value) && value != null)
+            {
+                keyParts[i] = value.ToString() ?? nullMarker;
+            }
+            else
+            {
+                keyParts[i] = nullMarker;
+            }
+        }
+
+        return string.Join(separator, keyParts);
     }
 
     private static Dictionary<string, object> SelectColumnsFromRows(

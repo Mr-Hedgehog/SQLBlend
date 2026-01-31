@@ -3,5 +3,6 @@
 public class FilterAggregationConfig
 {
     public string Name { get; set; }
+    public string? OutputFileName { get; set; }
     public List<OperationConfig> Operations { get; set; }
 }

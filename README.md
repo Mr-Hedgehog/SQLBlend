@@ -36,6 +36,7 @@ Prepare config.json to define your data sources, queries, parameters, and operat
   "Queries": [
     {
       "Name": "Query1",
+      "OutputFileName": "query1_result",
       "DataSourceName": "Source1",
       "QueryFilePath": "queries/query1.sql"
     },
@@ -56,6 +57,7 @@ Prepare config.json to define your data sources, queries, parameters, and operat
   "FiltersAndAggregations": [
     {
       "Name": "FinalResult",
+      "OutputFileName": "final_result",
       "Operations": [
         {
           "Operation": "Union",
@@ -74,6 +76,7 @@ Prepare config.json to define your data sources, queries, parameters, and operat
 In the above:
 
 * Optional `Description` field provides a human-readable description of the configuration. It is displayed in the configuration folder selector (limited to 60 characters in the list view) and is also searchable when selecting a configuration.
+* Optional `OutputFileName` field (without extension) can be used in `Queries` and `FiltersAndAggregations` to control the output CSV filename. If omitted, `Name` is used.
 * Two data sources (`Source1` and `Source2`) are defined.
 * `Query1` runs against SQL Server, `Query2` runs against PostgreSQL and uses the results of `Query1` to build its IN clause.
 * The final result (`FinalResult`) unions `Query1` and `Query2` results, then filters them.
@@ -95,6 +98,30 @@ Simply run the console application. It will:
 * Execute Query1 first, then Query2 (substituting parameters from Query1’s results).
 * Apply the union and filter operations.
 * Export the final output.
+
+### 4. Command Line Arguments
+
+The application supports optional command line arguments:
+
+* `--cache`  
+  Enables cache usage (reads previously saved results from the `Results` folder when available).
+
+* `<configsBaseDir>`  
+  Optional path to the base directory with configuration folders.  
+  If omitted, the current working directory is used.
+
+Default behavior (without `--cache`):
+
+* The app runs without cache.
+* Existing files in the `Results` folder are removed before execution.
+* Queries and aggregations are executed against data sources and fresh results are saved.
+
+Examples:
+
+* `SQLBlend.exe`
+* `SQLBlend.exe --cache`
+* `SQLBlend.exe C:\Configs`
+* `SQLBlend.exe C:\Configs --cache`
 
 ## Requirements
 * .NET 9.0 or newer

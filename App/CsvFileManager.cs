@@ -45,8 +45,9 @@ public static class CsvFileManager
     }
 
     /// <summary>
-    /// Reads a CSV file into a list of dictionary-based rows.
+    /// Reads a CSV file into a list of dictionary-based rows using streaming.
     /// The first line is assumed to be the header line with column names.
+    /// Memory-efficient: reads file line by line instead of loading entirely into memory.
     /// </summary>
     /// <param name="filePath">Path to the CSV file to be read.</param>
     /// <returns>A list of rows, each row is a Dictionary columnName -> string value.</returns>
@@ -57,18 +58,23 @@ public static class CsvFileManager
         if (!File.Exists(filePath))
             return result; // File not found => return empty list
 
-        var lines = File.ReadAllLines(filePath);
-        if (lines.Length == 0)
-            return result; // Empty file => return empty list
+        using var reader = new StreamReader(filePath);
 
         // First line - column headers
-        var headers = ParseCsvLine(lines[0]);
+        var headerLine = reader.ReadLine();
+        if (string.IsNullOrEmpty(headerLine))
+            return result; // Empty file => return empty list
 
-        // Data lines
-        for (int i = 1; i < lines.Length; i++)
+        var headers = ParseCsvLine(headerLine);
+
+        // Data lines - read one at a time (streaming)
+        while (reader.ReadLine() is { } line)
         {
-            var rowValues = ParseCsvLine(lines[i]);
-            var rowDict = new Dictionary<string, object>();
+            if (string.IsNullOrEmpty(line))
+                continue;
+
+            var rowValues = ParseCsvLine(line);
+            var rowDict = new Dictionary<string, object>(headers.Count);
 
             for (int colIndex = 0; colIndex < headers.Count; colIndex++)
             {
@@ -85,6 +91,44 @@ public static class CsvFileManager
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Reads a CSV file as a lazy enumerable (streaming).
+    /// Most memory-efficient option for processing large files.
+    /// The first line is assumed to be the header line with column names.
+    /// </summary>
+    /// <param name="filePath">Path to the CSV file to be read.</param>
+    /// <returns>An enumerable of rows that are read on-demand.</returns>
+    public static IEnumerable<Dictionary<string, object>> ReadFromCsvStreaming(string filePath)
+    {
+        if (!File.Exists(filePath))
+            yield break;
+
+        using var reader = new StreamReader(filePath);
+
+        var headerLine = reader.ReadLine();
+        if (string.IsNullOrEmpty(headerLine))
+            yield break;
+
+        var headers = ParseCsvLine(headerLine);
+
+        while (reader.ReadLine() is { } line)
+        {
+            if (string.IsNullOrEmpty(line))
+                continue;
+
+            var rowValues = ParseCsvLine(line);
+            var rowDict = new Dictionary<string, object>(headers.Count);
+
+            for (int colIndex = 0; colIndex < headers.Count; colIndex++)
+            {
+                var value = colIndex < rowValues.Count ? rowValues[colIndex] : null;
+                rowDict[headers[colIndex]] = value;
+            }
+
+            yield return rowDict;
+        }
     }
 
     /// <summary>

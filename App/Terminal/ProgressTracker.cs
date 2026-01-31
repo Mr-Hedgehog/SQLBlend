@@ -1,4 +1,5 @@
 using Terminal.Gui;
+using System.Diagnostics;
 
 namespace SQLBlend.Terminal;
 
@@ -243,7 +244,7 @@ public class ProgressTracker : IDisposable
         });
     }
 
-    public void ShowCompletionMessage(string message)
+    public void ShowCompletionMessage(string message, string? resultsDir = null)
     {
         if (!_isInitialized)
             return;
@@ -267,6 +268,11 @@ public class ProgressTracker : IDisposable
                 _statusLabel.Text = "Execution completed! Press any key to exit...";
             }
 
+            if (!string.IsNullOrWhiteSpace(resultsDir))
+            {
+                TryOpenFolder(resultsDir);
+            }
+
             if (_window != null)
             {
                 _window.KeyDown += (e) =>
@@ -279,6 +285,21 @@ public class ProgressTracker : IDisposable
         if (_appLoopTask != null)
         {
             _appLoopTask.Wait();
+        }
+    }
+
+    private static void TryOpenFolder(string folderPath)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = folderPath,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
         }
     }
 

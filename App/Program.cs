@@ -9,6 +9,7 @@ internal class Program
 {
     private static readonly string DefaultConfigsBaseDir = Directory.GetCurrentDirectory();
     private const string ConfigFileName = "config.json";
+    private const string EnableCacheFlag = "--cache";
 
     static async Task Main(string[] args)
     {
@@ -16,7 +17,10 @@ internal class Program
 
         try
         {
-            string configsBaseDir = args.Length > 0 ? args[0] : DefaultConfigsBaseDir;
+            bool disableCache = !args.Any(IsEnableCacheArg);
+            var positionalArgs = args.Where(arg => !IsEnableCacheArg(arg)).ToArray();
+
+            string configsBaseDir = positionalArgs.Length > 0 ? positionalArgs[0] : DefaultConfigsBaseDir;
             string? configFolder = ConfigSelector.SelectConfigFolder(configsBaseDir);
 
             if (configFolder == null)
@@ -25,7 +29,7 @@ internal class Program
                 return;
             }
 
-            args = [Path.Combine(configFolder, ConfigFileName)];
+            var configArgs = new[] { Path.Combine(configFolder, ConfigFileName) };
 
             tracker = new ProgressTracker();
             tracker.Initialize();
@@ -36,8 +40,14 @@ internal class Program
 
             tracker.AddStep("Load Configuration");
             tracker.StartStep("Load Configuration");
-            var (config, resultsDir) = LoadConfiguration(args);
+            var (config, resultsDir) = LoadConfiguration(configArgs);
             tracker.CompleteStep("Load Configuration");
+
+            if (disableCache)
+            {
+                ClearResultsDirectory(resultsDir);
+            }
+
             tracker.UpdateProgress(15, "Initializing database clients...");
 
             var resultsByQueryName = new Dictionary<string, List<Dictionary<string, object>>>();
@@ -67,9 +77,9 @@ internal class Program
 
                 try
                 {
-                    var resultFileName = Path.Combine(resultsDir, $"{queryConfig.Name}.csv");
+                    var resultFileName = GetResultFilePath(resultsDir, queryConfig.Name, queryConfig.OutputFileName);
 
-                    if (File.Exists(resultFileName))
+                    if (!disableCache && File.Exists(resultFileName))
                     {
                         resultsByQueryName[queryConfig.Name] = CsvFileManager.ReadFromCsv(resultFileName);
                         tracker.CompleteStep(stepName, "Loaded from cache");
@@ -103,6 +113,7 @@ internal class Program
                         resultsByQueryName[queryConfig.Name] = queryResults;
 
                         CsvFileManager.SaveToCsv(queryResults, resultFileName);
+
                         tracker.CompleteStep(stepName, $"{queryResults.Count} rows");
                     }
 
@@ -128,9 +139,9 @@ internal class Program
 
                 try
                 {
-                    var resultFileName = Path.Combine(resultsDir, $"{filter.Name}.csv");
+                    var resultFileName = GetResultFilePath(resultsDir, filter.Name, filter.OutputFileName);
 
-                    if (File.Exists(resultFileName))
+                    if (!disableCache && File.Exists(resultFileName))
                     {
                         resultsByQueryName[filter.Name] = CsvFileManager.ReadFromCsv(resultFileName);
                         tracker.CompleteStep(stepName, "Loaded from cache");
@@ -140,7 +151,9 @@ internal class Program
                         var aggregator = new DataAggregator(resultsByQueryName);
                         var aggregationResult = aggregator.ApplyOperations(filter.Operations);
                         resultsByQueryName[filter.Name] = aggregationResult;
+
                         CsvFileManager.SaveToCsv(aggregationResult, resultFileName);
+
                         tracker.CompleteStep(stepName, $"{aggregationResult.Count} rows");
                     }
 
@@ -157,7 +170,7 @@ internal class Program
             tracker.UpdateProgress(100, "Complete!");
 
             var completionMessage = FormatCompletionMessage(tracker, resultsDir, resultsByQueryName);
-            tracker.ShowCompletionMessage(completionMessage);
+            tracker.ShowCompletionMessage(completionMessage, resultsDir);
         }
         catch (Exception ex)
         {
@@ -232,5 +245,44 @@ internal class Program
         var config = ConfigReader.Read(configPath);
 
         return (config, resultsDir);
+    }
+
+    private static bool IsEnableCacheArg(string arg)
+    {
+        return string.Equals(arg, EnableCacheFlag, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void ClearResultsDirectory(string resultsDir)
+    {
+        if (!Directory.Exists(resultsDir))
+        {
+            return;
+        }
+
+        foreach (var filePath in Directory.EnumerateFiles(resultsDir))
+        {
+            File.Delete(filePath);
+        }
+
+        foreach (var directoryPath in Directory.EnumerateDirectories(resultsDir))
+        {
+            Directory.Delete(directoryPath, recursive: true);
+        }
+    }
+
+    private static string GetResultFilePath(string resultsDir, string defaultName, string? outputFileName)
+    {
+        var fileBaseName = string.IsNullOrWhiteSpace(outputFileName)
+            ? defaultName
+            : outputFileName;
+
+        fileBaseName = Path.GetFileNameWithoutExtension(fileBaseName);
+
+        if (string.IsNullOrWhiteSpace(fileBaseName))
+        {
+            throw new InvalidOperationException("Output file name cannot be empty.");
+        }
+
+        return Path.Combine(resultsDir, $"{fileBaseName}.csv");
     }
 }
