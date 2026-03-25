@@ -9,6 +9,7 @@ internal class Program
 {
     private static readonly string DefaultConfigsBaseDir = Directory.GetCurrentDirectory();
     private const string ConfigFileName = "config.json";
+    private const string OverrideConfigFileName = "config.override.json";
     private const string EnableCacheFlag = "--cache";
 
     static async Task Main(string[] args)
@@ -87,6 +88,7 @@ internal class Program
                     else
                     {
                         var sql = File.ReadAllText(queryConfig.QueryFilePath);
+                        sql = ApplyQueryVariables(sql, queryConfig.Variables);
 
                         if (queryConfig.Parameters != null)
                         {
@@ -243,6 +245,13 @@ internal class Program
         Directory.CreateDirectory(resultsDir);
 
         var config = ConfigReader.Read(configPath);
+        var overrideConfigPath = Path.Combine(AppContext.BaseDirectory, OverrideConfigFileName);
+
+        if (File.Exists(overrideConfigPath))
+        {
+            var overrideConfig = ConfigReader.ReadOverride(overrideConfigPath);
+            ApplyConnectionStringOverrides(config, overrideConfig);
+        }
 
         return (config, resultsDir);
     }
@@ -284,5 +293,45 @@ internal class Program
         }
 
         return Path.Combine(resultsDir, $"{fileBaseName}.csv");
+    }
+
+    private static void ApplyConnectionStringOverrides(AppConfig config, AppConfigOverride overrideConfig)
+    {
+        if (overrideConfig.ConnectionStrings == null || overrideConfig.ConnectionStrings.Count == 0)
+        {
+            return;
+        }
+
+        var sourceConnections = config.ConnectionStrings.ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var overrideConnection in overrideConfig.ConnectionStrings)
+        {
+            if (string.IsNullOrWhiteSpace(overrideConnection.Name))
+            {
+                continue;
+            }
+
+            if (!sourceConnections.TryGetValue(overrideConnection.Name, out var existingConnection))
+            {
+                throw new InvalidOperationException($"Connection string override references unknown source '{overrideConnection.Name}'.");
+            }
+
+            existingConnection.ConnectionString = overrideConnection.ConnectionString;
+        }
+    }
+
+    private static string ApplyQueryVariables(string sql, Dictionary<string, string>? variables)
+    {
+        if (variables == null || variables.Count == 0)
+        {
+            return sql;
+        }
+
+        foreach (var (name, value) in variables)
+        {
+            sql = sql.Replace($"{{{{{name}}}}}", value ?? string.Empty, StringComparison.Ordinal);
+        }
+
+        return sql;
     }
 }

@@ -48,6 +48,25 @@ public static class ConfigReader
         return config;
     }
 
+    public static AppConfigOverride ReadOverride(string filePath)
+    {
+        if (!File.Exists(filePath))
+        {
+            throw new FileNotFoundException($"Override configuration file was not found: {filePath}");
+        }
+
+        string json = File.ReadAllText(filePath);
+
+        try
+        {
+            return JsonSerializer.Deserialize<AppConfigOverride>(json, jsonOptions) ?? new AppConfigOverride();
+        }
+        catch (JsonException ex)
+        {
+            throw new Exception("Error while parsing the JSON override configuration file", ex);
+        }
+    }
+
     private static void ValidateConfig(AppConfig config)
     {
         if (config.ConnectionStrings == null || config.ConnectionStrings.Count == 0)

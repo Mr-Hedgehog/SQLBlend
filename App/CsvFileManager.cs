@@ -4,6 +4,8 @@ namespace SQLBlend;
 
 public static class CsvFileManager
 {
+    private static readonly UTF8Encoding Utf8WithBom = new(encoderShouldEmitUTF8Identifier: true);
+
     /// <summary>
     /// Saves a list of dictionary-based rows to a CSV file.
     /// The first row of the file contains column headers.
@@ -12,7 +14,7 @@ public static class CsvFileManager
     /// <param name="filePath">Path to the CSV file to be written.</param>
     public static void SaveToCsv(List<Dictionary<string, object>> data, string filePath)
     {
-        using var writer = new StreamWriter(filePath);
+        using var writer = new StreamWriter(filePath, append: false, encoding: Utf8WithBom);
 
         if (data.Count == 0)
         {
@@ -58,7 +60,7 @@ public static class CsvFileManager
         if (!File.Exists(filePath))
             return result; // File not found => return empty list
 
-        using var reader = new StreamReader(filePath);
+        using var reader = new StreamReader(filePath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
 
         // First line - column headers
         var headerLine = reader.ReadLine();
@@ -105,7 +107,7 @@ public static class CsvFileManager
         if (!File.Exists(filePath))
             yield break;
 
-        using var reader = new StreamReader(filePath);
+        using var reader = new StreamReader(filePath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
 
         var headerLine = reader.ReadLine();
         if (string.IsNullOrEmpty(headerLine))

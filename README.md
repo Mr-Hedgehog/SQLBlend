@@ -17,7 +17,7 @@
  
 ## Workflow
 ### 1. Set up Configuration:
-Prepare config.json to define your data sources, queries, parameters, and operations. For example:
+Prepare `config.json` to define your data sources, queries, parameters, and operations. For example:
 ```json
 {
   "Description": "Optional description of the configuration, displayed in the configuration selector",
@@ -73,6 +73,20 @@ Prepare config.json to define your data sources, queries, parameters, and operat
 }
 
 ```
+
+Optional: add `config.override.json` next to the executable file to override connection strings for local/dev runs without changing the main `config.json`.
+
+Example `config.override.json`:
+```json
+{
+  "ConnectionStrings": [
+    {
+      "Name": "Source1",
+      "ConnectionString": "Server=localhost;Database=...;User Id=...;Password=..."
+    }
+  ]
+}
+```
 In the above:
 
 * Optional `Description` field provides a human-readable description of the configuration. It is displayed in the configuration folder selector (limited to 60 characters in the list view) and is also searchable when selecting a configuration.
@@ -80,6 +94,102 @@ In the above:
 * Two data sources (`Source1` and `Source2`) are defined.
 * `Query1` runs against SQL Server, `Query2` runs against PostgreSQL and uses the results of `Query1` to build its IN clause.
 * The final result (`FinalResult`) unions `Query1` and `Query2` results, then filters them.
+* If `config.override.json` exists near the executable, connection strings are overridden by matching `Name`.
+
+### Operations examples
+
+Below are minimal `Operations` examples for every supported operation type.
+
+#### 1) `Union`
+```json
+{
+  "Operation": "Union",
+  "QueryNames": ["Query1", "Query2", "Query3"]
+}
+```
+
+#### 2) `Filter`
+`Filter` is applied to the current intermediate result (for example, after `Union`).
+```json
+{
+  "Operation": "Filter",
+  "Condition": "Value >= 100"
+}
+```
+
+Also supported in conditions: `=`, `!=`, `<>`, `>`, `<`, `>=`, `<=`, `LIKE`, `IN`.
+
+Examples:
+- `"Condition": "Status = Active"`
+- `"Condition": "Name LIKE %test%"`
+- `"Condition": "Type IN A,B,C"`
+
+#### 3) `InnerJoin`
+```json
+{
+  "Operation": "InnerJoin",
+  "LeftQueryName": "Orders",
+  "RightQueryName": "Customers",
+  "JoinConditions": [
+    {
+      "LeftColumn": "CustomerId",
+      "RightColumn": "Id",
+      "Operator": "="
+    }
+  ],
+  "SelectColumns": [
+    { "Query": "Left", "Column": "OrderId" },
+    { "Query": "Left", "Column": "Amount" },
+    { "Query": "Right", "Column": "Name" }
+  ]
+}
+```
+
+#### 4) `LeftJoin`
+```json
+{
+  "Operation": "LeftJoin",
+  "LeftQueryName": "Orders",
+  "RightQueryName": "Customers",
+  "JoinConditions": [
+    {
+      "LeftColumn": "CustomerId",
+      "RightColumn": "Id",
+      "Operator": "="
+    }
+  ],
+  "SelectColumns": [
+    { "Query": "Left", "Column": "OrderId" },
+    { "Query": "Left", "Column": "CustomerId" },
+    { "Query": "Right", "Column": "Name" }
+  ]
+}
+```
+
+> Note: joins currently support only `"Operator": "="`.
+
+### Query-level SQL variables
+
+You can define variables per query and use them directly in SQL files.
+
+Config example:
+```json
+{
+  "Name": "query1",
+  "DataSourceName": "Query1Source",
+  "QueryFilePath": "queries/query1.sql",
+  "Variables": {
+    "PeriodStartDate": "2026-01-01"
+  }
+}
+```
+
+SQL example (`queries/query1.sql`):
+```sql
+SELECT *
+FROM documents
+WHERE created_at >= '{{PeriodStartDate}}';
+```
 
 ### 2. Add SQL Files:
 Store your queries in separate .sql files, for example:
