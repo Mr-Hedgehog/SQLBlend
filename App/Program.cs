@@ -82,7 +82,8 @@ internal class Program
 
                     if (!disableCache && File.Exists(resultFileName))
                     {
-                        resultsByQueryName[queryConfig.Name] = CsvFileManager.ReadFromCsv(resultFileName);
+                        var cachedResults = CsvFileManager.ReadFromCsv(resultFileName);
+                        resultsByQueryName[queryConfig.Name] = cachedResults;
                         tracker.CompleteStep(stepName, "Loaded from cache");
                     }
                     else
@@ -141,11 +142,13 @@ internal class Program
 
                 try
                 {
-                    var resultFileName = GetResultFilePath(resultsDir, filter.Name, filter.OutputFileName);
+                    var outputExtension = GetAggregationOutputExtension(filter.OutputFormat);
+                    var resultFileName = GetResultFilePath(resultsDir, filter.Name, filter.OutputFileName, outputExtension);
 
-                    if (!disableCache && File.Exists(resultFileName))
+                    if (filter.OutputFormat == AggregationOutputFormatType.Csv && !disableCache && File.Exists(resultFileName))
                     {
-                        resultsByQueryName[filter.Name] = CsvFileManager.ReadFromCsv(resultFileName);
+                        var cachedResults = CsvFileManager.ReadFromCsv(resultFileName);
+                        resultsByQueryName[filter.Name] = cachedResults;
                         tracker.CompleteStep(stepName, "Loaded from cache");
                     }
                     else
@@ -154,7 +157,14 @@ internal class Program
                         var aggregationResult = aggregator.ApplyOperations(filter.Operations);
                         resultsByQueryName[filter.Name] = aggregationResult;
 
-                        CsvFileManager.SaveToCsv(aggregationResult, resultFileName);
+                        if (filter.OutputFormat == AggregationOutputFormatType.Excel)
+                        {
+                            ExcelFileManager.SaveToExcel(aggregationResult, resultFileName);
+                        }
+                        else
+                        {
+                            CsvFileManager.SaveToCsv(aggregationResult, resultFileName);
+                        }
 
                         tracker.CompleteStep(stepName, $"{aggregationResult.Count} rows");
                     }
@@ -279,7 +289,7 @@ internal class Program
         }
     }
 
-    private static string GetResultFilePath(string resultsDir, string defaultName, string? outputFileName)
+    private static string GetResultFilePath(string resultsDir, string defaultName, string? outputFileName, string extension = ".csv")
     {
         var fileBaseName = string.IsNullOrWhiteSpace(outputFileName)
             ? defaultName
@@ -292,7 +302,12 @@ internal class Program
             throw new InvalidOperationException("Output file name cannot be empty.");
         }
 
-        return Path.Combine(resultsDir, $"{fileBaseName}.csv");
+        return Path.Combine(resultsDir, $"{fileBaseName}{extension}");
+    }
+
+    private static string GetAggregationOutputExtension(AggregationOutputFormatType outputFormat)
+    {
+        return outputFormat == AggregationOutputFormatType.Excel ? ".xlsx" : ".csv";
     }
 
     private static void ApplyConnectionStringOverrides(AppConfig config, AppConfigOverride overrideConfig)

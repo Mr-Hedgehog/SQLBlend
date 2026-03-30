@@ -8,6 +8,7 @@ namespace SQLBlend.Database;
 
 internal class DatabaseClient : IDatabaseClient
 {
+    private const int DefaultCommandTimeoutSeconds = 120;
     private readonly string connectionString;
     private readonly DbConnectionType dbType;
 
@@ -26,7 +27,7 @@ internal class DatabaseClient : IDatabaseClient
             // Execute the query using Dapper.
             // Dapper by default returns an IEnumerable<dynamic>,
             // where each row is represented as an ExpandoObject (IDictionary<string, object>).
-            var rows = await connection.QueryAsync(query);
+            var rows = await connection.QueryAsync(query, commandTimeout: DefaultCommandTimeoutSeconds);
 
             var result = new List<Dictionary<string, object>>();
             foreach (var row in rows)
